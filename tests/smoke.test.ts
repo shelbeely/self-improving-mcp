@@ -52,6 +52,8 @@ describe("MCP server setup", () => {
       "write_file",
       "edit_file",
       "delete_file",
+      "get_tool_list",
+      "list_tool_usage_examples",
     ];
 
     for (const name of expectedTools) {

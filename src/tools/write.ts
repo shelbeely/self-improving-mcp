@@ -50,14 +50,21 @@ export function registerWriteTools(server: McpServer): void {
         "Parent directories are created automatically. " +
         "Rejects paths that escape the repo root or target node_modules, .git, or dist. " +
         "Use this tool to make code changes in the local clone; use GitHub MCP tools " +
-        "(e.g. create_pull_request, report_progress) for remote git operations.",
+        "(e.g. create_pull_request, report_progress) for remote git operations. " +
+        "Pass dryRun: true to validate the path without writing anything.",
       inputSchema: {
         path: z.string().describe("Repo-relative path, e.g. src/tools/example.ts"),
         content: z.string().describe("Full text content to write to the file."),
+        dryRun: z
+          .boolean()
+          .optional()
+          .describe(
+            "When true, resolves and validates the path but does not write anything."
+          ),
       },
       annotations: { readOnlyHint: false, destructiveHint: true },
     },
-    async ({ path, content }) => {
+    async ({ path, content, dryRun }) => {
       const abs = resolveRepoPath(path);
       if (!abs) {
         return {
@@ -66,6 +73,16 @@ export function registerWriteTools(server: McpServer): void {
             {
               type: "text",
               text: `Rejected: path "${path}" escapes the repo root or targets a blocked directory.`,
+            },
+          ],
+        };
+      }
+      if (dryRun) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Dry run: would write ${content.length} bytes to ${path}`,
             },
           ],
         };
@@ -122,7 +139,7 @@ export function registerWriteTools(server: McpServer): void {
       if (occurrences === 0) {
         return {
           isError: true,
-          content: [{ type: "text", text: `old_str not found in ${path}` }],
+          content: [{ type: "text", text: "String not found" }],
         };
       }
       if (occurrences > 1) {
@@ -131,7 +148,7 @@ export function registerWriteTools(server: McpServer): void {
           content: [
             {
               type: "text",
-              text: `old_str matches ${occurrences} times in ${path}. Add more context to make it unique.`,
+              text: `String matches ${occurrences} occurrences — add more context to make it unique.`,
             },
           ],
         };
@@ -152,13 +169,20 @@ export function registerWriteTools(server: McpServer): void {
       description:
         "Permanently delete a single file from the repo. " +
         "Rejects paths outside the repo root, blocked directories, and a small set " +
-        "of critical files (package.json, tsconfig.json, src/server.ts).",
+        "of critical files (package.json, tsconfig.json, src/server.ts). " +
+        "Pass dryRun: true to validate the path without deleting anything.",
       inputSchema: {
         path: z.string().describe("Repo-relative path to the file to delete."),
+        dryRun: z
+          .boolean()
+          .optional()
+          .describe(
+            "When true, resolves and validates the path but does not delete anything."
+          ),
       },
       annotations: { readOnlyHint: false, destructiveHint: true },
     },
-    async ({ path }) => {
+    async ({ path, dryRun }) => {
       const normalized = normalize(path);
 
       if (DELETE_BLOCKLIST.has(normalized)) {
@@ -181,6 +205,17 @@ export function registerWriteTools(server: McpServer): void {
             {
               type: "text",
               text: `Rejected: path "${path}" escapes the repo root or targets a blocked directory.`,
+            },
+          ],
+        };
+      }
+
+      if (dryRun) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Dry run: would delete ${path}`,
             },
           ],
         };

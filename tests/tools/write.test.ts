@@ -163,7 +163,7 @@ describe("edit_file tool", () => {
     await write({ path, content: "foo\nfoo\nbar" });
     const result = await edit({ path, old_str: "foo", new_str: "baz" });
     expect(result.isError).toBe(true);
-    expect(result.content[0].text).toContain("matches 2 times");
+    expect(result.content[0].text).toContain("matches 2 occurrences");
   });
 
   it("returns an error for a non-existent file", async () => {

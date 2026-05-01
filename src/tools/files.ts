@@ -1,6 +1,14 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import * as z from "zod";
-import { listFilesRecursive, safeReadFile, REPO_ROOT } from "../utils/fs.js";
+import { readFile, stat } from "node:fs/promises";
+import { join, normalize, extname } from "node:path";
+import {
+  listFilesRecursive,
+  safeReadFile,
+  REPO_ROOT,
+  TEXT_EXTENSIONS,
+  MAX_FILE_BYTES,
+} from "../utils/fs.js";
 
 /** Register all file-browsing tools onto the server. */
 export function registerFilesTools(server: McpServer): void {
@@ -28,7 +36,6 @@ export function registerFilesTools(server: McpServer): void {
       annotations: { readOnlyHint: true },
     },
     async ({ extension, subdir }) => {
-      const { join, normalize } = await import("node:path");
       let dir = REPO_ROOT;
       if (subdir) {
         const safe = normalize(subdir).replace(/^(\.\.\/|\/)+/, "");
@@ -62,23 +69,98 @@ export function registerFilesTools(server: McpServer): void {
     {
       description:
         "Read the contents of a text file in the repository. " +
-        "Path must be relative to the repo root. Binary and files >128 KB are rejected.",
+        "Path must be relative to the repo root. " +
+        "Supports optional startLine/endLine (1-based) to return a specific line range — " +
+        "the 128 KB size check is applied after slicing. " +
+        "Binary files and files >128 KB (after any slice) are rejected.",
       inputSchema: {
         path: z.string().describe("Relative path to the file, e.g. src/server.ts"),
+        startLine: z
+          .number()
+          .int()
+          .min(1)
+          .optional()
+          .describe("First line to return (1-based, inclusive). Omit to start from the beginning."),
+        endLine: z
+          .number()
+          .int()
+          .min(1)
+          .optional()
+          .describe("Last line to return (1-based, inclusive). Omit to read to end of file."),
       },
       annotations: { readOnlyHint: true },
     },
-    async ({ path }) => {
-      const result = await safeReadFile(path);
-      if ("error" in result) {
+    async ({ path, startLine, endLine }) => {
+      // Fast path: no line range — use existing safe helper
+      if (startLine === undefined && endLine === undefined) {
+        const result = await safeReadFile(path);
+        if ("error" in result) {
+          return {
+            isError: true,
+            content: [{ type: "text", text: result.error }],
+          };
+        }
+        return { content: [{ type: "text", text: result.content }] };
+      }
+
+      // Line-range path: read raw, slice first, then size-check
+      const normalized = normalize(path).replace(/^(\.\.\/|\/)+/, "");
+      const abs = join(REPO_ROOT, normalized);
+      if (!abs.startsWith(REPO_ROOT + "/") && abs !== REPO_ROOT) {
         return {
           isError: true,
-          content: [{ type: "text", text: result.error }],
+          content: [{ type: "text", text: "Path escapes repository root." }],
         };
       }
-      return {
-        content: [{ type: "text", text: result.content }],
-      };
+
+      const ext = extname(normalized).toLowerCase();
+      if (!TEXT_EXTENSIONS.has(ext) && ext !== "") {
+        return {
+          isError: true,
+          content: [
+            {
+              type: "text",
+              text: `File type "${ext}" is not a recognised text type. Use list_files to browse binary files.`,
+            },
+          ],
+        };
+      }
+
+      let fileStat;
+      try {
+        fileStat = await stat(abs);
+      } catch {
+        return {
+          isError: true,
+          content: [{ type: "text", text: `File not found: ${normalized}` }],
+        };
+      }
+      if (!fileStat.isFile()) {
+        return {
+          isError: true,
+          content: [{ type: "text", text: `Not a file: ${normalized}` }],
+        };
+      }
+
+      const raw = await readFile(abs, "utf-8");
+      const lines = raw.split("\n");
+      const start = (startLine ?? 1) - 1;
+      const end = endLine ?? lines.length;
+      const sliced = lines.slice(start, end).join("\n");
+
+      if (sliced.length > MAX_FILE_BYTES) {
+        return {
+          isError: true,
+          content: [
+            {
+              type: "text",
+              text: `Selected range too large (${sliced.length} bytes). Maximum is ${MAX_FILE_BYTES} bytes.`,
+            },
+          ],
+        };
+      }
+
+      return { content: [{ type: "text", text: sliced }] };
     }
   );
 }

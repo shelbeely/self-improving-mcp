@@ -5,6 +5,7 @@ import { registerValidationTools } from "./validation.js";
 import { registerDiagnosticsTools } from "./diagnostics.js";
 import { registerMemoryTools } from "./memory.js";
 import { registerWriteTools } from "./write.js";
+import { registerToolListTools } from "./toollist.js";
 
 /** Register all tools onto the server. */
 export function registerAllTools(server: McpServer): void {
@@ -14,4 +15,5 @@ export function registerAllTools(server: McpServer): void {
   registerDiagnosticsTools(server);
   registerMemoryTools(server);
   registerWriteTools(server);
+  registerToolListTools(server);
 }

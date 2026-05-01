@@ -46,6 +46,7 @@ src/
     diagnostics.ts   — diagnose_server, suggest_improvements
     memory.ts        — store_memory, read_memory
     write.ts         — write_file, edit_file, delete_file
+    toollist.ts      — get_tool_list, list_tool_usage_examples
   utils/
     fs.ts            — Safe filesystem helpers (REPO_ROOT, safeReadFile, listFilesRecursive)
 
@@ -58,6 +59,8 @@ tests/
     diagnostics.test.ts    — diagnose_server, suggest_improvements tests
     memory.test.ts         — store_memory, read_memory tests
     write.test.ts          — write_file, edit_file, delete_file tests
+    index.test.ts          — tool index registration tests
+    toollist.test.ts       — get_tool_list, list_tool_usage_examples tests
 
 docs/
   architecture.md    — This file
@@ -102,19 +105,21 @@ hard timeout and output cap.
 | Tool | Description |
 |---|---|
 | `list_files` | List repo files, filter by extension or subdirectory |
-| `read_file` | Read a text file (≤128 KB, allowed extensions only) |
+| `read_file` | Read a text file with optional line-range (≤128 KB after slicing) |
 | `analyze_repo` | Summary: file counts by extension, top-level dirs, total size |
 | `search_files` | Full-text search across text files (case-insensitive, ≤200 hits) |
 | `validate_typescript` | Run `tsc --noEmit` and return errors |
 | `run_tests` | Run `bun test` and return results |
 | `check_dependencies` | Verify declared deps are installed in node_modules |
 | `diagnose_server` | Health-check: required files, valid JSON configs, source count |
-| `suggest_improvements` | Static analysis: TODOs, test coverage gaps, docs gaps |
+| `suggest_improvements` | Static analysis: flagged comments, test coverage gaps, docs gaps |
 | `store_memory` | Persist a key/value pair to `.github/agent-memory.json` |
 | `read_memory` | Read one or all entries from the agent memory store |
-| `write_file` | Create or overwrite a file in the local repo clone |
+| `write_file` | Create or overwrite a file in the local repo clone; supports dry-run |
 | `edit_file` | Find-and-replace exactly one occurrence within a file |
-| `delete_file` | Delete a file (blocklist protects critical files) |
+| `delete_file` | Delete a file (blocklist protects critical files); supports dry-run |
+| `get_tool_list` | Return a formatted table of all registered tools and descriptions |
+| `list_tool_usage_examples` | Return `@example` JSDoc snippets from `src/tools/*.ts`, grouped by tool |
 
 ---
 
