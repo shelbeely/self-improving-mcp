@@ -44,19 +44,33 @@ src/
     analysis.ts      — analyze_repo, search_files
     validation.ts    — validate_typescript, run_tests, check_dependencies
     diagnostics.ts   — diagnose_server, suggest_improvements
+    memory.ts        — store_memory, read_memory
+    write.ts         — write_file, edit_file, delete_file
   utils/
     fs.ts            — Safe filesystem helpers (REPO_ROOT, safeReadFile, listFilesRecursive)
 
 tests/
-  smoke.test.ts      — Server instantiation, tool registration, fs utility tests
+  smoke.test.ts            — Server instantiation, tool registration, fs utility tests
+  tools/
+    files.test.ts          — list_files, read_file tests
+    analysis.test.ts       — analyze_repo, search_files tests
+    validation.test.ts     — validate_typescript, run_tests, check_dependencies tests
+    diagnostics.test.ts    — diagnose_server, suggest_improvements tests
+    memory.test.ts         — store_memory, read_memory tests
+    write.test.ts          — write_file, edit_file, delete_file tests
 
 docs/
   architecture.md    — This file
 
 .github/
+  copilot-instructions.md  — Repository-wide custom instructions for Copilot
+  agent-memory.json        — Persistent agent memory (gitignored)
   copilot-setup-steps.yml  — Pre-session dependency install & smoke check
   agents/
-    self-improver.md       — Custom Copilot agent profile for improvement sessions
+    self-improver.agent.md — Custom Copilot agent profile for improvement sessions
+  instructions/
+    tools.instructions.md  — Path-specific instructions for src/tools/**
+    tests.instructions.md  — Path-specific instructions for tests/**
   workflows/
     ci.yml                 — GitHub Actions: typecheck → test → server startup check
 ```
@@ -70,10 +84,12 @@ docs/
 | Read repo files | ✅ | Core analysis function |
 | Run `tsc --noEmit` | ✅ | Read-only type check |
 | Run `bun test` | ✅ | Read-only validation |
-| Write / delete files | ❌ | Copilot edits directly |
+| Write / overwrite files | ✅ | Via `write_file` / `edit_file` (local clone only) |
+| Delete files | ✅ | Via `delete_file` (blocklist protects critical files) |
+| Persist session memory | ✅ | Via `store_memory` / `read_memory` |
 | Run arbitrary shell | ❌ | No shell injection surface |
-| Push commits / open PRs | ❌ | Never via MCP |
-| Rewrite own source | ❌ | Never via MCP |
+| Push commits / open PRs | ❌ | Never via MCP — use `report_progress` |
+| Rewrite own source unsafely | ❌ | Blocklist protects critical files |
 
 The `runSafe()` helper in `src/tools/validation.ts` runs only the two
 pre-approved, argument-free commands (`tsc --noEmit`, `bun test`) with a
@@ -94,44 +110,113 @@ hard timeout and output cap.
 | `check_dependencies` | Verify declared deps are installed in node_modules |
 | `diagnose_server` | Health-check: required files, valid JSON configs, source count |
 | `suggest_improvements` | Static analysis: TODOs, test coverage gaps, docs gaps |
+| `store_memory` | Persist a key/value pair to `.github/agent-memory.json` |
+| `read_memory` | Read one or all entries from the agent memory store |
+| `write_file` | Create or overwrite a file in the local repo clone |
+| `edit_file` | Find-and-replace exactly one occurrence within a file |
+| `delete_file` | Delete a file (blocklist protects critical files) |
 
 ---
 
 ## The Self-Improvement Loop
 
+This server works **alongside** the GitHub MCP server (available by default in
+Copilot cloud agent sessions). The division of responsibility is:
+
+| Concern | Tool(s) |
+|---|---|
+| Read local source | `read_file`, `list_files`, `search_files` |
+| Analyse the codebase | `analyze_repo`, `diagnose_server`, `suggest_improvements` |
+| Validate changes locally | `validate_typescript`, `run_tests` |
+| **Write** local files | `write_file`, `edit_file`, `delete_file` |
+| **Persist** session context | `store_memory`, `read_memory` |
+| Remote git / GitHub ops | GitHub MCP server (`create_pull_request`, etc.) |
+
 ```
-┌─ orient ──────────────────────────────────┐
-│  analyze_repo + diagnose_server           │
-└──────────────────┬────────────────────────┘
+┌─ orient ──────────────────────────────────────────┐
+│  read_memory (first call — restore prior context) │
+│  analyze_repo + diagnose_server                   │
+└──────────────────┬────────────────────────────────┘
                    │
-┌─ identify ───────▼────────────────────────┐
-│  suggest_improvements + read open issues  │
-└──────────────────┬────────────────────────┘
+┌─ identify ───────▼────────────────────────────────┐
+│  suggest_improvements                             │
+│  GitHub MCP: list open issues / PRs               │
+└──────────────────┬────────────────────────────────┘
                    │
-┌─ baseline ───────▼────────────────────────┐
-│  validate_typescript + run_tests          │
-└──────────────────┬────────────────────────┘
+┌─ baseline ───────▼────────────────────────────────┐
+│  validate_typescript + run_tests                  │
+└──────────────────┬────────────────────────────────┘
                    │
-┌─ implement ──────▼────────────────────────┐
-│  Copilot edits files directly             │
-└──────────────────┬────────────────────────┘
+┌─ implement ──────▼────────────────────────────────┐
+│  write_file / edit_file / delete_file             │
+└──────────────────┬────────────────────────────────┘
                    │
-┌─ verify ─────────▼────────────────────────┐
-│  validate_typescript + run_tests (again)  │
-│  ↩ revert if failures                     │
-└──────────────────┬────────────────────────┘
+┌─ verify ─────────▼────────────────────────────────┐
+│  validate_typescript + run_tests (again)          │
+│  ↩ revert via write_file/edit_file if failures   │
+└──────────────────┬────────────────────────────────┘
                    │
-┌─ document ───────▼────────────────────────┐
-│  Update docs/architecture.md if needed   │
-└──────────────────┬────────────────────────┘
+┌─ persist ────────▼────────────────────────────────┐
+│  store_memory: last_branch, last_change_summary,  │
+│               test_status                         │
+└──────────────────┬────────────────────────────────┘
                    │
-                   ▼
-             Open focused PR
+┌─ ship ───────────▼────────────────────────────────┐
+│  GitHub MCP: report_progress / create_pull_request│
+└───────────────────────────────────────────────────┘
 ```
 
 ---
 
-## Extending the Server
+## Two Memory Layers
+
+Copilot has two distinct memory systems that complement each other in this repo:
+
+### 1. GitHub Copilot Memory (platform-level, automatic)
+
+GitHub's native memory feature (currently in public preview) automatically
+creates "memories" as Copilot works on a repository. Key properties:
+
+- **Automatic** — Copilot deduces memories from its own activity; no agent action needed.
+- **Validated** — each memory is stored with code citations and re-checked against the
+  current branch before use; stale memories are discarded.
+- **Ephemeral** — memories expire after 28 days unless re-validated.
+- **Shared** — all Copilot-enabled users of the repository benefit from the same memory.
+- **Platform-managed** — visible and deletable via **GitHub Settings → Copilot → Memory**.
+- Used by Copilot cloud agent, code review, and CLI.
+
+See [GitHub docs: Copilot Memory](https://docs.github.com/en/copilot/concepts/agents/copilot-memory)
+for details.
+
+### 2. Agent session notes (`store_memory` / `read_memory`, this MCP server)
+
+This server provides a complementary **explicit, agent-controlled** note store:
+
+| Property | Value |
+|---|---|
+| Storage | `.github/agent-memory.json` (local repo clone) |
+| Creation | Explicit — agent calls `store_memory` intentionally |
+| Validation | None — values are stored and returned verbatim |
+| Expiry | Never — persists until the agent deletes or overwrites a key |
+| Scope | This MCP server session only |
+| Managed by | The agent itself; visible in `.github/agent-memory.json` |
+
+**Use case:** track work-in-progress state across sessions — e.g. `last_branch`,
+`last_change_summary`, `test_status` — so the agent can resume work without
+re-exploring the whole repo from scratch.
+
+### How they work together
+
+```
+GitHub Copilot Memory (platform)          Agent session notes (this server)
+────────────────────────────────          ─────────────────────────────────
+Learns: "DB connections use X pattern"    Records: "last_branch = feat/memory"
+Learns: "File A and B stay in sync"       Records: "test_status = all passing"
+Auto-validated, 28-day TTL                Explicit, permanent until overwritten
+Used by code review + cloud agent         Used by this MCP server only
+```
+
+
 
 To add a new tool:
 
