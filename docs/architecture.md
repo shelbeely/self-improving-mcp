@@ -164,7 +164,55 @@ Copilot cloud agent sessions). The division of responsibility is:
 
 ---
 
-## Extending the Server
+## Two Memory Layers
+
+Copilot has two distinct memory systems that complement each other in this repo:
+
+### 1. GitHub Copilot Memory (platform-level, automatic)
+
+GitHub's native memory feature (currently in public preview) automatically
+creates "memories" as Copilot works on a repository. Key properties:
+
+- **Automatic** — Copilot deduces memories from its own activity; no agent action needed.
+- **Validated** — each memory is stored with code citations and re-checked against the
+  current branch before use; stale memories are discarded.
+- **Ephemeral** — memories expire after 28 days unless re-validated.
+- **Shared** — all Copilot-enabled users of the repository benefit from the same memory.
+- **Platform-managed** — visible and deletable via **GitHub Settings → Copilot → Memory**.
+- Used by Copilot cloud agent, code review, and CLI.
+
+See [GitHub docs: Copilot Memory](https://docs.github.com/en/copilot/concepts/agents/copilot-memory)
+for details.
+
+### 2. Agent session notes (`store_memory` / `read_memory`, this MCP server)
+
+This server provides a complementary **explicit, agent-controlled** note store:
+
+| Property | Value |
+|---|---|
+| Storage | `.github/agent-memory.json` (local repo clone) |
+| Creation | Explicit — agent calls `store_memory` intentionally |
+| Validation | None — values are stored and returned verbatim |
+| Expiry | Never — persists until the agent deletes or overwrites a key |
+| Scope | This MCP server session only |
+| Managed by | The agent itself; visible in `.github/agent-memory.json` |
+
+**Use case:** track work-in-progress state across sessions — e.g. `last_branch`,
+`last_change_summary`, `test_status` — so the agent can resume work without
+re-exploring the whole repo from scratch.
+
+### How they work together
+
+```
+GitHub Copilot Memory (platform)          Agent session notes (this server)
+────────────────────────────────          ─────────────────────────────────
+Learns: "DB connections use X pattern"    Records: "last_branch = feat/memory"
+Learns: "File A and B stay in sync"       Records: "test_status = all passing"
+Auto-validated, 28-day TTL                Explicit, permanent until overwritten
+Used by code review + cloud agent         Used by this MCP server only
+```
+
+
 
 To add a new tool:
 
