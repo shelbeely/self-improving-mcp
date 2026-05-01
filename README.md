@@ -44,7 +44,36 @@ bun run dev
 
 ## Connecting to Copilot
 
-Add the following to your Copilot/VS Code MCP configuration:
+### Copilot cloud agent (GitHub Settings)
+
+MCP configuration for Copilot cloud agent is entered in **GitHub repository Settings**,
+not via a file in the repo.
+
+1. Go to **Settings → Copilot → Cloud agent** in this repository.
+2. Paste the following JSON into the **MCP configuration** section:
+
+```json
+{
+  "mcpServers": {
+    "self-improving-mcp": {
+      "type": "stdio",
+      "command": "bash",
+      "args": [".github/start-mcp.sh"],
+      "tools": ["*"]
+    }
+  }
+}
+```
+
+3. Click **Save MCP configuration**.
+
+> **Note:** `.github/start-mcp.sh` bootstraps Bun and starts the server.
+> The GitHub and Playwright MCP servers are enabled by default; no extra
+> config is needed for those.
+
+### VS Code / local
+
+Add the following to your VS Code MCP settings:
 
 ```json
 {
