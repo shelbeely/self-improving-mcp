@@ -3,6 +3,15 @@ import { readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { REPO_ROOT, listFilesRecursive, safeReadFile } from "../utils/fs.js";
 
+/** Pattern matching comment lines that contain actionable markers. */
+const MARKER_PATTERN = new RegExp(
+  `\\b(${"TODO"}|${"FIXME"}|${"HACK"}|${"XXX"})\\b`,
+  "i"
+);
+
+/** Pattern to extract tool names from registerTool calls. */
+const TOOL_NAME_PATTERN = /server\.registerTool\(\s*["']([^"']+)["']/g;
+
 /** Register diagnostics tools. */
 export function registerDiagnosticsTools(server: McpServer): void {
   // ── diagnose_server ─────────────────────────────────────────────────────────
@@ -108,16 +117,16 @@ export function registerDiagnosticsTools(server: McpServer): void {
       const files = await listFilesRecursive(join(REPO_ROOT, "src"));
       const tsFiles = files.filter((f) => f.ext === ".ts");
 
-      // 1. Check for TODO / FIXME comments
-      const { readFile: rf } = await import("node:fs/promises");
+      // 1. Check for flagged comments
       for (const file of tsFiles) {
-        const content = await rf(join(REPO_ROOT, file.path), "utf-8");
+        const content = await readFile(join(REPO_ROOT, file.path), "utf-8");
         const lines = content.split("\n");
         for (let i = 0; i < lines.length; i++) {
           const line = lines[i];
-          if (/\b(TODO|FIXME|HACK|XXX)\b/i.test(line)) {
+          // Only flag comment lines to avoid false positives from pattern literals
+          if (/^\s*(\/\/|\/\*)/.test(line) && MARKER_PATTERN.test(line)) {
             suggestions.push(
-              `[todo] ${file.path}:${i + 1}: ${line.trim()}`
+              `[flag] ${file.path}:${i + 1}: ${line.trim()}`
             );
           }
         }
@@ -164,6 +173,41 @@ export function registerDiagnosticsTools(server: McpServer): void {
         suggestions.push(
           "[ci] No .github/workflows found. Consider adding a CI pipeline."
         );
+      }
+
+      // 6. Check all registered tool names appear in README.md tools table
+      const toolsDir = join(REPO_ROOT, "src", "tools");
+      const toolSourceFiles = await listFilesRecursive(toolsDir);
+      const registeredToolNames: string[] = [];
+
+      for (const f of toolSourceFiles.filter((x) => x.ext === ".ts")) {
+        const src = await readFile(join(REPO_ROOT, f.path), "utf-8");
+        TOOL_NAME_PATTERN.lastIndex = 0;
+        let m: RegExpExecArray | null;
+        while ((m = TOOL_NAME_PATTERN.exec(src)) !== null) {
+          registeredToolNames.push(m[1]);
+        }
+      }
+
+      const readmeContent =
+        "error" in readmeResult ? "" : readmeResult.content;
+      for (const toolName of registeredToolNames) {
+        if (!readmeContent.includes(`\`${toolName}\``)) {
+          suggestions.push(
+            `[docs] Tool "${toolName}" is not listed in README.md tools table.`
+          );
+        }
+      }
+
+      // 7. Check all registered tool names appear in docs/architecture.md
+      const archResult = await safeReadFile("docs/architecture.md");
+      const archContent = "error" in archResult ? "" : archResult.content;
+      for (const toolName of registeredToolNames) {
+        if (!archContent.includes(toolName)) {
+          suggestions.push(
+            `[docs] Tool "${toolName}" is not mentioned in docs/architecture.md.`
+          );
+        }
       }
 
       if (suggestions.length === 0) {

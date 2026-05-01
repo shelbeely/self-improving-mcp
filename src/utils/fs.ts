@@ -8,10 +8,10 @@ export const REPO_ROOT = new URL("../../", import.meta.url).pathname.replace(
 );
 
 /** Maximum file size in bytes that read_file will return. */
-const MAX_FILE_BYTES = 128 * 1024; // 128 KB
+export const MAX_FILE_BYTES = 128 * 1024; // 128 KB
 
 /** Extensions treated as text files for analysis. */
-const TEXT_EXTENSIONS = new Set([
+export const TEXT_EXTENSIONS = new Set([
   ".ts", ".js", ".mts", ".mjs", ".json", ".md", ".yml", ".yaml",
   ".toml", ".txt", ".sh", ".env.example", ".gitignore",
 ]);
