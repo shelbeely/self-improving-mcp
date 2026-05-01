@@ -35,7 +35,12 @@ export async function listFilesRecursive(
   _depth = 0
 ): Promise<FileEntry[]> {
   if (_depth > maxDepth) return [];
-  const entries = await readdir(dir, { withFileTypes: true });
+  let entries;
+  try {
+    entries = await readdir(dir, { withFileTypes: true });
+  } catch {
+    return [];
+  }
   const results: FileEntry[] = [];
 
   for (const entry of entries) {
@@ -77,6 +82,14 @@ export async function safeReadFile(
     return { error: "Path escapes repository root." };
   }
 
+  // Reject non-text extensions before hitting the filesystem
+  const ext = extname(normalized).toLowerCase();
+  if (!TEXT_EXTENSIONS.has(ext) && ext !== "") {
+    return {
+      error: `File type "${ext}" is not a recognised text type. Use list_files to browse binary files.`,
+    };
+  }
+
   let s;
   try {
     s = await stat(abs);
@@ -88,13 +101,6 @@ export async function safeReadFile(
   if (s.size > MAX_FILE_BYTES) {
     return {
       error: `File too large (${s.size} bytes). Maximum is ${MAX_FILE_BYTES} bytes.`,
-    };
-  }
-
-  const ext = extname(normalized).toLowerCase();
-  if (!TEXT_EXTENSIONS.has(ext) && ext !== "") {
-    return {
-      error: `File type "${ext}" is not a recognised text type. Use list_files to browse binary files.`,
     };
   }
 

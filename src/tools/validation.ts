@@ -13,13 +13,14 @@ const execAsync = promisify(exec);
 async function runSafe(
   cmd: string,
   timeoutMs = 60_000,
-  maxBytes = 64 * 1024
+  maxBytes = 64 * 1024,
+  extraEnv: Record<string, string> = {}
 ): Promise<{ output: string; exitCode: number }> {
   try {
     const { stdout, stderr } = await execAsync(cmd, {
       cwd: REPO_ROOT,
       timeout: timeoutMs,
-      env: { ...process.env, NO_COLOR: "1", FORCE_COLOR: "0" },
+      env: { ...process.env, NO_COLOR: "1", FORCE_COLOR: "0", ...extraEnv },
     });
     const combined = (stdout + stderr).slice(0, maxBytes);
     return { output: combined, exitCode: 0 };
@@ -72,9 +73,22 @@ export function registerValidationTools(server: McpServer): void {
       annotations: { readOnlyHint: true },
     },
     async () => {
+      // Guard against recursive invocation when called from within a bun test run
+      if (process.env.SELF_IMPROVING_MCP_RUNNING_TESTS) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: "✅ (Skipped: already running inside a test process)",
+            },
+          ],
+        };
+      }
       const { output, exitCode } = await runSafe(
         "bun test",
-        120_000
+        120_000,
+        undefined,
+        { SELF_IMPROVING_MCP_RUNNING_TESTS: "1" }
       );
       return {
         content: [

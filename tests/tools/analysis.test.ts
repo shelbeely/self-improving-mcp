@@ -19,7 +19,7 @@ type ToolHandler = (
   extra?: unknown
 ) => Promise<ToolResult>;
 
-type RegisteredTools = Record<string, { callback: ToolHandler }>;
+type RegisteredTools = Record<string, { handler: ToolHandler }>;
 
 function makeServer(): McpServer {
   const server = new McpServer(
@@ -33,7 +33,7 @@ function makeServer(): McpServer {
 function getTool(server: McpServer, name: string): ToolHandler {
   const tools = (server as unknown as { _registeredTools: RegisteredTools })
     ._registeredTools;
-  return tools[name].callback;
+  return tools[name].handler;
 }
 
 // ---------------------------------------------------------------------------
@@ -112,7 +112,9 @@ describe("search_files tool", () => {
   it("reports no matches for a pattern that does not exist", async () => {
     const server = makeServer();
     const handler = getTool(server, "search_files");
-    const result = await handler({ pattern: "XYZZY_NONEXISTENT_PATTERN_42" });
+    // Build pattern dynamically so this literal string doesn't appear in source and match itself
+    const pattern = ["XYZZY", "NONEXISTENT", "TOKEN", "99Z"].join("_");
+    const result = await handler({ pattern });
     expect(result.content[0].text).toContain("No matches found");
   });
 
