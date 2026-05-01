@@ -87,7 +87,7 @@ export function registerValidationTools(server: McpServer): void {
       const { output, exitCode } = await runSafe(
         "bun test",
         120_000,
-        undefined,
+        64 * 1024,
         { SELF_IMPROVING_MCP_RUNNING_TESTS: "1" }
       );
       return {
