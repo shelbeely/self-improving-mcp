@@ -47,6 +47,11 @@ describe("MCP server setup", () => {
       "check_dependencies",
       "diagnose_server",
       "suggest_improvements",
+      "store_memory",
+      "read_memory",
+      "write_file",
+      "edit_file",
+      "delete_file",
     ];
 
     for (const name of expectedTools) {

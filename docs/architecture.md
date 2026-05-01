@@ -44,16 +44,26 @@ src/
     analysis.ts      — analyze_repo, search_files
     validation.ts    — validate_typescript, run_tests, check_dependencies
     diagnostics.ts   — diagnose_server, suggest_improvements
+    memory.ts        — store_memory, read_memory
+    write.ts         — write_file, edit_file, delete_file
   utils/
     fs.ts            — Safe filesystem helpers (REPO_ROOT, safeReadFile, listFilesRecursive)
 
 tests/
-  smoke.test.ts      — Server instantiation, tool registration, fs utility tests
+  smoke.test.ts            — Server instantiation, tool registration, fs utility tests
+  tools/
+    files.test.ts          — list_files, read_file tests
+    analysis.test.ts       — analyze_repo, search_files tests
+    validation.test.ts     — validate_typescript, run_tests, check_dependencies tests
+    diagnostics.test.ts    — diagnose_server, suggest_improvements tests
+    memory.test.ts         — store_memory, read_memory tests
+    write.test.ts          — write_file, edit_file, delete_file tests
 
 docs/
   architecture.md    — This file
 
 .github/
+  agent-memory.json        — Persistent agent memory (gitignored)
   copilot-setup-steps.yml  — Pre-session dependency install & smoke check
   agents/
     self-improver.md       — Custom Copilot agent profile for improvement sessions
@@ -70,10 +80,12 @@ docs/
 | Read repo files | ✅ | Core analysis function |
 | Run `tsc --noEmit` | ✅ | Read-only type check |
 | Run `bun test` | ✅ | Read-only validation |
-| Write / delete files | ❌ | Copilot edits directly |
+| Write / overwrite files | ✅ | Via `write_file` / `edit_file` (local clone only) |
+| Delete files | ✅ | Via `delete_file` (blocklist protects critical files) |
+| Persist session memory | ✅ | Via `store_memory` / `read_memory` |
 | Run arbitrary shell | ❌ | No shell injection surface |
-| Push commits / open PRs | ❌ | Never via MCP |
-| Rewrite own source | ❌ | Never via MCP |
+| Push commits / open PRs | ❌ | Never via MCP — use `report_progress` |
+| Rewrite own source unsafely | ❌ | Blocklist protects critical files |
 
 The `runSafe()` helper in `src/tools/validation.ts` runs only the two
 pre-approved, argument-free commands (`tsc --noEmit`, `bun test`) with a
@@ -94,39 +106,60 @@ hard timeout and output cap.
 | `check_dependencies` | Verify declared deps are installed in node_modules |
 | `diagnose_server` | Health-check: required files, valid JSON configs, source count |
 | `suggest_improvements` | Static analysis: TODOs, test coverage gaps, docs gaps |
+| `store_memory` | Persist a key/value pair to `.github/agent-memory.json` |
+| `read_memory` | Read one or all entries from the agent memory store |
+| `write_file` | Create or overwrite a file in the local repo clone |
+| `edit_file` | Find-and-replace exactly one occurrence within a file |
+| `delete_file` | Delete a file (blocklist protects critical files) |
 
 ---
 
 ## The Self-Improvement Loop
 
+This server works **alongside** the GitHub MCP server (available by default in
+Copilot cloud agent sessions). The division of responsibility is:
+
+| Concern | Tool(s) |
+|---|---|
+| Read local source | `read_file`, `list_files`, `search_files` |
+| Analyse the codebase | `analyze_repo`, `diagnose_server`, `suggest_improvements` |
+| Validate changes locally | `validate_typescript`, `run_tests` |
+| **Write** local files | `write_file`, `edit_file`, `delete_file` |
+| **Persist** session context | `store_memory`, `read_memory` |
+| Remote git / GitHub ops | GitHub MCP server (`create_pull_request`, etc.) |
+
 ```
-┌─ orient ──────────────────────────────────┐
-│  analyze_repo + diagnose_server           │
-└──────────────────┬────────────────────────┘
+┌─ orient ──────────────────────────────────────────┐
+│  read_memory (first call — restore prior context) │
+│  analyze_repo + diagnose_server                   │
+└──────────────────┬────────────────────────────────┘
                    │
-┌─ identify ───────▼────────────────────────┐
-│  suggest_improvements + read open issues  │
-└──────────────────┬────────────────────────┘
+┌─ identify ───────▼────────────────────────────────┐
+│  suggest_improvements                             │
+│  GitHub MCP: list open issues / PRs               │
+└──────────────────┬────────────────────────────────┘
                    │
-┌─ baseline ───────▼────────────────────────┐
-│  validate_typescript + run_tests          │
-└──────────────────┬────────────────────────┘
+┌─ baseline ───────▼────────────────────────────────┐
+│  validate_typescript + run_tests                  │
+└──────────────────┬────────────────────────────────┘
                    │
-┌─ implement ──────▼────────────────────────┐
-│  Copilot edits files directly             │
-└──────────────────┬────────────────────────┘
+┌─ implement ──────▼────────────────────────────────┐
+│  write_file / edit_file / delete_file             │
+└──────────────────┬────────────────────────────────┘
                    │
-┌─ verify ─────────▼────────────────────────┐
-│  validate_typescript + run_tests (again)  │
-│  ↩ revert if failures                     │
-└──────────────────┬────────────────────────┘
+┌─ verify ─────────▼────────────────────────────────┐
+│  validate_typescript + run_tests (again)          │
+│  ↩ revert via write_file/edit_file if failures   │
+└──────────────────┬────────────────────────────────┘
                    │
-┌─ document ───────▼────────────────────────┐
-│  Update docs/architecture.md if needed   │
-└──────────────────┬────────────────────────┘
+┌─ persist ────────▼────────────────────────────────┐
+│  store_memory: last_branch, last_change_summary,  │
+│               test_status                         │
+└──────────────────┬────────────────────────────────┘
                    │
-                   ▼
-             Open focused PR
+┌─ ship ───────────▼────────────────────────────────┐
+│  GitHub MCP: report_progress / create_pull_request│
+└───────────────────────────────────────────────────┘
 ```
 
 ---

@@ -3,6 +3,8 @@ import { registerFilesTools } from "./files.js";
 import { registerAnalysisTools } from "./analysis.js";
 import { registerValidationTools } from "./validation.js";
 import { registerDiagnosticsTools } from "./diagnostics.js";
+import { registerMemoryTools } from "./memory.js";
+import { registerWriteTools } from "./write.js";
 
 /** Register all tools onto the server. */
 export function registerAllTools(server: McpServer): void {
@@ -10,4 +12,6 @@ export function registerAllTools(server: McpServer): void {
   registerAnalysisTools(server);
   registerValidationTools(server);
   registerDiagnosticsTools(server);
+  registerMemoryTools(server);
+  registerWriteTools(server);
 }

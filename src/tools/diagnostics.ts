@@ -26,6 +26,8 @@ export function registerDiagnosticsTools(server: McpServer): void {
         "src/tools/analysis.ts",
         "src/tools/validation.ts",
         "src/tools/diagnostics.ts",
+        "src/tools/memory.ts",
+        "src/tools/write.ts",
         "src/utils/fs.ts",
         "package.json",
         "tsconfig.json",

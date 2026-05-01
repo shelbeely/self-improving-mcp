@@ -39,6 +39,11 @@ bun run dev
 | `check_dependencies` | Verify all declared deps are installed |
 | `diagnose_server` | Health-check: required files, valid configs, source count |
 | `suggest_improvements` | Static analysis: TODOs, test gaps, docs gaps |
+| `store_memory` | Persist a key/value pair to `.github/agent-memory.json` |
+| `read_memory` | Read one or all entries from the agent memory store |
+| `write_file` | Create or overwrite a file in the local repo clone |
+| `edit_file` | Find-and-replace exactly one occurrence within a file |
+| `delete_file` | Delete a file (blocklist protects critical files) |
 
 ---
 
@@ -101,19 +106,23 @@ See [`docs/architecture.md`](docs/architecture.md) for:
 
 ## Self-Improvement Loop
 
-The server **never** writes files or runs git commands.
-All code changes are made by Copilot through normal file edits, validated afterward.
+This server works **alongside** the GitHub MCP server (enabled by default in
+Copilot cloud agent sessions). Each handles a distinct concern:
+
+- **This server** — local filesystem: read, write, validate, remember.
+- **GitHub MCP server** — remote operations: issues, PRs, commits, code search.
 
 **Workflow:**
-1. Copilot calls `analyze_repo` + `diagnose_server` to orient itself.
-2. Calls `suggest_improvements` for automated ideas.
-3. Establishes a baseline with `validate_typescript` + `run_tests`.
-4. Makes changes using Copilot's built-in file editing.
-5. Validates again — reverts if anything breaks.
-6. Opens a focused PR.
+1. Call `read_memory` first — restore context from the previous session.
+2. Call `analyze_repo` + `diagnose_server` to orient.
+3. Call `suggest_improvements` (and GitHub MCP for open issues/PRs).
+4. Establish a baseline with `validate_typescript` + `run_tests`.
+5. Make changes with `write_file` / `edit_file` / `delete_file`.
+6. Validate again — revert via `write_file`/`edit_file` if anything breaks.
+7. Call `store_memory` with `last_branch`, `last_change_summary`, `test_status`.
+8. Use the GitHub MCP server (`report_progress` / `create_pull_request`) to ship.
 
-See [`.github/agents/self-improver.md`](.github/agents/self-improver.md) for the
-full custom agent profile.
+See [`docs/architecture.md`](docs/architecture.md) for the full loop diagram.
 
 ---
 
@@ -130,6 +139,9 @@ bun run start      # run compiled server with Node.js
 ## Safety
 
 - No arbitrary shell execution
-- No file writes, deletes, or git operations via MCP
+- File writes, edits and deletes are scoped to the repo clone
+- A blocklist prevents deleting `package.json`, `tsconfig.json`, `src/server.ts`
+- Writes are blocked into `node_modules`, `.git`, `dist`
 - Files are read through a path-traversal-safe helper
 - `tsc` and `bun test` run with a hard 2-minute timeout and 64 KB output cap
+- Git operations always go through the GitHub MCP server, never via MCP shell commands
