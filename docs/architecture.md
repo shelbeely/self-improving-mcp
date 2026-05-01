@@ -63,10 +63,14 @@ docs/
   architecture.md    — This file
 
 .github/
+  copilot-instructions.md  — Repository-wide custom instructions for Copilot
   agent-memory.json        — Persistent agent memory (gitignored)
   copilot-setup-steps.yml  — Pre-session dependency install & smoke check
   agents/
-    self-improver.md       — Custom Copilot agent profile for improvement sessions
+    self-improver.agent.md — Custom Copilot agent profile for improvement sessions
+  instructions/
+    tools.instructions.md  — Path-specific instructions for src/tools/**
+    tests.instructions.md  — Path-specific instructions for tests/**
   workflows/
     ci.yml                 — GitHub Actions: typecheck → test → server startup check
 ```
