@@ -1,0 +1,20 @@
+{
+  "mcpServers": {
+    "self-improving-mcp": {
+      "type": "stdio",
+      "command": "bun",
+      "args": ["run", "src/server.ts"],
+      "tools": [
+        "analyze_repo",
+        "search_files",
+        "diagnose_server",
+        "suggest_improvements",
+        "list_files",
+        "read_file",
+        "validate_typescript",
+        "run_tests",
+        "check_dependencies"
+      ]
+    }
+  }
+}
