@@ -22,7 +22,7 @@ type ToolHandler = (
   extra?: unknown
 ) => Promise<ToolResult>;
 
-type RegisteredTools = Record<string, { callback: ToolHandler }>;
+type RegisteredTools = Record<string, { handler: ToolHandler }>;
 
 function makeServer(): McpServer {
   const server = new McpServer(
@@ -36,7 +36,7 @@ function makeServer(): McpServer {
 function getTool(server: McpServer, name: string): ToolHandler {
   const tools = (server as unknown as { _registeredTools: RegisteredTools })
     ._registeredTools;
-  return tools[name].callback;
+  return tools[name].handler;
 }
 
 // ---------------------------------------------------------------------------
