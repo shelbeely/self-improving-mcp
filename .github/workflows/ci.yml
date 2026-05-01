@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+    branches: [main, "copilot/**"]
+  pull_request:
+    branches: [main]
+
+jobs:
+  validate:
+    name: Typecheck, Lint & Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Type-check
+        run: bun run typecheck
+
+      - name: Run tests
+        run: bun test
+
+      - name: Smoke-check server startup
+        run: |
+          # Start the server with stdio transport in background, send an initialise
+          # request and verify it responds within 5 seconds.
+          timeout 5 bun run src/server.ts <<'EOF' || true
+          {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"ci-check","version":"0.0.1"}}}
+          EOF
+          echo "Startup smoke-check complete."

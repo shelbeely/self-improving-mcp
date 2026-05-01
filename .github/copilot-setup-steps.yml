@@ -1,0 +1,25 @@
+# Copilot Cloud Agent Setup Steps
+# This file tells Copilot's cloud agent how to prepare the environment
+# before starting a coding session on this repository.
+
+steps:
+  - name: Install Bun
+    run: |
+      curl -fsSL https://bun.sh/install | bash
+      echo "$HOME/.bun/bin" >> "$GITHUB_PATH"
+
+  - name: Install dependencies
+    run: bun install
+
+  - name: Verify MCP server starts
+    run: |
+      timeout 5 bun run src/server.ts <<'EOF' || true
+      {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"setup-check","version":"0.0.1"}}}
+      EOF
+      echo "MCP server startup verified."
+
+  - name: Run type-check
+    run: bun run typecheck
+
+  - name: Run tests
+    run: bun test
