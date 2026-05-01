@@ -2,8 +2,8 @@
   "mcpServers": {
     "self-improving-mcp": {
       "type": "stdio",
-      "command": "bun",
-      "args": ["run", "src/server.ts"],
+      "command": "bash",
+      "args": [".github/start-mcp.sh"],
       "tools": [
         "analyze_repo",
         "search_files",
